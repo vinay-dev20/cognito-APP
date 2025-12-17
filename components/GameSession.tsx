@@ -3,6 +3,7 @@ import { Riddle } from '../types';
 import { Button } from './Button';
 import { Lightbulb, Unlock, ChevronRight, Check, Lock, AlertCircle } from 'lucide-react';
 import { RiddleVisual } from './Visuals';
+import { playClueSound, playRevealSound, playNextSound } from '../utils/sound';
 
 interface GameSessionProps {
   riddle: Riddle;
@@ -14,16 +15,28 @@ export const GameSession: React.FC<GameSessionProps> = ({ riddle, onNext, isLast
   const [unlockedClues, setUnlockedClues] = useState<boolean[]>([false, false, false]);
   const [showSolution, setShowSolution] = useState(false);
   const [score, setScore] = useState(100);
+  const [confirmingClueIndex, setConfirmingClueIndex] = useState<number | null>(null);
 
   useEffect(() => {
     // Reset state when riddle changes
     setUnlockedClues([false, false, false]);
     setShowSolution(false);
     setScore(100);
+    setConfirmingClueIndex(null);
   }, [riddle]);
+
+  const handleClueClick = (index: number) => {
+    if (confirmingClueIndex === index) {
+      unlockClue(index);
+      setConfirmingClueIndex(null);
+    } else {
+      setConfirmingClueIndex(index);
+    }
+  };
 
   const unlockClue = (index: number) => {
     if (!unlockedClues[index]) {
+      playClueSound();
       const penalty = (index + 1) * 15; // Increasing penalty: 15, 30, 45
       setScore(prev => Math.max(0, prev - penalty));
       
@@ -34,7 +47,13 @@ export const GameSession: React.FC<GameSessionProps> = ({ riddle, onNext, isLast
   };
 
   const handleRevealSolution = () => {
+    playRevealSound();
     setShowSolution(true);
+  };
+
+  const handleNext = () => {
+    playNextSound();
+    onNext();
   };
 
   return (
@@ -97,7 +116,7 @@ export const GameSession: React.FC<GameSessionProps> = ({ riddle, onNext, isLast
                  </div>
                  
                  <div className="mt-8 flex justify-end">
-                    <Button onClick={onNext} className="flex items-center gap-2">
+                    <Button onClick={handleNext} className="flex items-center gap-2">
                       {isLast ? "Complete Training" : "Next Challenge"} <ChevronRight size={18} />
                     </Button>
                  </div>
@@ -117,45 +136,67 @@ export const GameSession: React.FC<GameSessionProps> = ({ riddle, onNext, isLast
             const isUnlocked = unlockedClues[index];
             // Previous clue must be unlocked to unlock current, unless it's the first one
             const isLocked = !isUnlocked && (index > 0 && !unlockedClues[index - 1]);
+            const isConfirming = confirmingClueIndex === index && !isUnlocked;
             const penalty = (index + 1) * 15;
 
             return (
               <div 
                 key={index}
                 className={`
-                  relative rounded-2xl border transition-all duration-300
+                  relative rounded-2xl border transition-all duration-300 overflow-hidden
                   ${isUnlocked 
                     ? 'bg-yellow-50 border-yellow-200' 
-                    : 'bg-white border-gray-200 hover:border-blue-200'}
+                    : isConfirming
+                      ? 'bg-orange-50 border-orange-200 ring-1 ring-orange-100'
+                      : 'bg-white border-gray-200 hover:border-blue-200'}
                   ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}
                 `}
               >
                 {!isUnlocked ? (
                   <button 
-                    onClick={() => !isLocked && unlockClue(index)}
+                    onClick={() => !isLocked && handleClueClick(index)}
                     disabled={isLocked || showSolution}
                     className="w-full p-5 flex items-center justify-between text-left group focus:outline-none"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={`
-                        w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors
-                        ${isLocked ? 'bg-gray-100 text-gray-400' : 'bg-blue-50 text-google-blue group-hover:bg-blue-100'}
-                      `}>
-                        {isLocked ? <Lock size={14} /> : index + 1}
-                      </div>
-                      <div className="flex flex-col">
-                        <span className={`text-sm font-medium ${isLocked ? 'text-gray-400' : 'text-gray-700'}`}>
-                          Level {index + 1} Clue
+                    {isConfirming ? (
+                      <>
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center animate-pulse">
+                              <AlertCircle size={16} />
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-orange-800">Confirm Unlock?</span>
+                              <span className="text-xs text-orange-700 font-medium">Cost: -{penalty} pts</span>
+                            </div>
+                        </div>
+                        <span className="text-xs bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-bold">
+                          Tap to Confirm
                         </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <div className={`
+                            w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors
+                            ${isLocked ? 'bg-gray-100 text-gray-400' : 'bg-blue-50 text-google-blue group-hover:bg-blue-100'}
+                          `}>
+                            {isLocked ? <Lock size={14} /> : index + 1}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className={`text-sm font-medium ${isLocked ? 'text-gray-400' : 'text-gray-700'}`}>
+                              Level {index + 1} Clue
+                            </span>
+                            {!isLocked && (
+                              <span className="text-xs text-google-red font-medium">-{penalty} pts</span>
+                            )}
+                          </div>
+                        </div>
                         {!isLocked && (
-                           <span className="text-xs text-google-red font-medium">-{penalty} pts</span>
+                          <span className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full font-medium group-hover:bg-blue-50 group-hover:text-google-blue transition-colors">
+                            Reveal
+                          </span>
                         )}
-                      </div>
-                    </div>
-                    {!isLocked && (
-                      <span className="text-xs bg-gray-100 text-gray-600 px-3 py-1 rounded-full font-medium group-hover:bg-blue-50 group-hover:text-google-blue transition-colors">
-                        Reveal
-                      </span>
+                      </>
                     )}
                   </button>
                 ) : (
